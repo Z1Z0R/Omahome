@@ -1,0 +1,19 @@
+# Python and editor artifacts
+__pycache__/
+*.py[cod]
+.venv/
+.vscode/
+.idea/
+*~
+
+# Credentials and local configuration
+.env
+.env.*
+connection.json
+
+# Local build/test output
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+*.zip

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "zizor.omahome",
+  "name": "Omahome",
+  "version": "1.0.0",
+  "author": "Zizor",
+  "description": "Control Home Assistant RGB lights, plugs, fans, air care, climate, speakers, and automations from the Omarchy bar. View sensors and open local or remote dashboards.",
+  "license": "MIT",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Omahome",
+    "description": "Control your Home Assistant devices",
+    "category": "Utilities",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

@@ -2,7 +2,7 @@
 
 A native **Home Assistant** panel for the Omarchy desktop, by **Zizor**. Control connected devices from the bar, view room measurements, and open your local or remote Home Assistant dashboard.
 
-![Omahome panel with brightness, RGB color presets, and an Automations category](docs/images/panel-example.png)
+![Omahome panel with brightness, RGB color presets, and an Automations category](docs/images/panel-example-clean-logo.png)
 
 *Example rendered from the actual panel with sample devices. Colors follow your Omarchy theme; available controls depend on your Home Assistant entities.*
 

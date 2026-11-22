@@ -87,7 +87,7 @@ exec /usr/bin/mv "$@"
         for path in self.source.glob('*.qml'):
             self.assertEqual((self.installed / path.name).read_bytes(), path.read_bytes())
         self.assertTrue((self.installed / 'assets/NOTICE-home-assistant.md').exists())
-        self.assertEqual((self.installed / 'docs/images/panel-example.png').read_bytes(), (self.source / 'docs/images/panel-example.png').read_bytes())
+        self.assertEqual((self.installed / 'docs/images/panel-example-clean-logo.png').read_bytes(), (self.source / 'docs/images/panel-example-clean-logo.png').read_bytes())
         self.assert_connection_untouched()
 
     def test_successful_update_keeps_complete_old_backup(self):

@@ -8,7 +8,21 @@ A native Omarchy desktop bar plugin for Home Assistant. Click the Home Assistant
 
 Requires Omarchy Quattro's plugin-capable shell, Python 3.9 or newer, and Qt Quick Controls (normally included with Omarchy). No pip/npm dependencies, web server, background daemon, or Home Assistant custom integration is required.
 
-Extract this archive, open a terminal in the `omahome` directory, and run:
+Install directly from GitHub and enable the plugin:
+
+```bash
+omarchy plugin add https://github.com/Z1Z0R/Omahome.git --enable
+```
+
+Follow Omarchy's prompts, then click the Home Assistant icon in the bar. Update a Git-managed installation with:
+
+```bash
+omarchy plugin update zizor.omahome
+```
+
+### Manual installation
+
+Alternatively, extract the release archive or clone the repository, open a terminal in its root directory, and run:
 
 ```bash
 bash install.sh
@@ -16,9 +30,9 @@ bash install.sh
 
 The installer validates and installs `zizor.omahome`, rescans plugins, and enables the Home Assistant icon on the right of the bar. It asks you to use the explicit update command for an existing installation. Your connection settings are kept separately.
 
-### Update an existing installation
+### Update a manual installation
 
-From the extracted `omahome` directory, run:
+For an installation originally made with `install.sh`, run from the new checkout or extracted release:
 
 ```bash
 bash install.sh --update

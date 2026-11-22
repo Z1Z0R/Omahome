@@ -31,7 +31,23 @@ Entities are grouped by physical device, with search and category filters. Gener
 
 ## Installation
 
-Clone this repository or extract a release archive, open a terminal in its root directory, and run:
+Install and enable Omahome directly from GitHub:
+
+```bash
+omarchy plugin add https://github.com/Z1Z0R/Omahome.git --enable
+```
+
+Follow Omarchy's prompts, then click the Home Assistant icon in the bar to configure your connection.
+
+For installations added this way, get updates with:
+
+```bash
+omarchy plugin update zizor.omahome
+```
+
+### Manual installation
+
+Alternatively, clone this repository or extract a release archive, open a terminal in its root directory, and run:
 
 ```bash
 bash install.sh
@@ -39,7 +55,7 @@ bash install.sh
 
 The installer validates the plugin, installs it as `zizor.omahome`, and enables its Home Assistant icon on the right side of the bar.
 
-To update an existing installation from the new checkout or extracted release:
+To update an installation originally made with `install.sh`, run from the new checkout or extracted release:
 
 ```bash
 bash install.sh --update

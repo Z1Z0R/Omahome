@@ -71,6 +71,10 @@ Updates stage and validate the complete plugin before activation, preserve the o
 3. In Home Assistant, create a **Long-lived access token** from your profile's **Security** settings.
 4. Paste the token into Omahome, choose **Local**, and click **Save and connect**.
 
+Startup and opening the panel only load saved settings; they do not contact Home Assistant. On later openings, click **Connect to Home Assistant** to start a session. Closing the panel ends that session, cancels pending API work, and requires a fresh Connect action next time.
+
+Local HTTP cannot authenticate the server: a private IP or `.local` hostname can identify a different device on another network. Connect over HTTP only on your trusted home network. Use HTTPS with a valid server certificate for server identity verification; an open HTTP session is not protected against network changes.
+
 For remote use, enter an existing HTTPS root URL, select **Remote**, and save. **Open remotely** opens that dashboard in your browser. Home Assistant Cloud, an existing HTTPS tunnel, or a reverse proxy can provide external access; Omahome does not create a tunnel or public hostname. Browser login is separate from API token authentication, and a proxy login gate may block API requests.
 
 See the [usage guide](docs/usage.md) for device support, remote access, troubleshooting, and connection details.
@@ -103,7 +107,7 @@ python3 tests/smoke_qml.py
 
 The tests use isolated settings and mocked Home Assistant responses. The QML smoke test requires an installed Omarchy shell and Quickshell; it renders the actual controls offscreen with the compositor popup wrapper replaced. Live Wayland placement and physical device behavior need separate testing.
 
-The repository contains the QML panel and controls, the standard-library Python bridge in `bin/bridge.py`, the installer, tests, and documentation. No background service is installed. The panel polls every ten seconds while open.
+The repository contains the QML panel and controls, the standard-library Python bridge in `bin/bridge.py`, the installer, tests, and documentation. No background service is installed. After an explicit connection, the panel polls every ten seconds while open.
 
 ## Removal
 

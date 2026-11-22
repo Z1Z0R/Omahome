@@ -21,6 +21,10 @@ Ui.BarWidget {
     property bool inFlight: false
     property bool settingsOpen: false
     property bool connected: false
+    property bool sessionApproved: false
+    property int sessionGeneration: 0
+    readonly property bool canUseApi: panel.open && sessionApproved && !settingsOpen
+    readonly property bool usesLocalHttp: connection.mode !== "remote" && connection.local_url.indexOf("http://") === 0
     property string message: "Add your Home Assistant connection to get started."
     property string errorText: ""
     property string search: ""
@@ -35,13 +39,26 @@ Ui.BarWidget {
     property string lastUpdate: ""
     ListModel { id: devices }
 
-    function open() { panel.open = true; request("config"); if (connection.has_token) refresh() }
-    function close() { panel.open = false; token.text = "" }
+    function open() { panel.open = true; request("config") }
+    function endSession() {
+        sessionGeneration++
+        sessionApproved = false; connected = false
+        queue = queue.filter(item => item.command !== "states" && item.command !== "control")
+        refreshLater.stop()
+        deferredDevices = null; interactions = 0
+    }
+    function close() { panel.open = false; token.text = ""; endSession() }
+    function connectSaved() {
+        if (!panel.open || settingsOpen || !connection.has_token) return
+        sessionApproved = true
+        refresh()
+    }
     function togglePanel() { if (panel.open) close(); else open() }
     function closeForPopoutSwitch() { close() }
     function request(command, values) {
+        if ((command === "states" || command === "control") && !canUseApi) return
         // Coalesce pending slider changes, never repeat a command after a failure.
-        const item = {command: command, values: values || {}}
+        const item = {command: command, values: values || {}, generation: sessionGeneration}
         let next = queue.slice()
         if (command === "states" && (next.some(x => x.command === "states") || (activeRequest && activeRequest.command === "states"))) return
         if (command === "control") next = next.filter(x => !(x.command === command && x.values.entity === item.values.entity && x.values.action === item.values.action))
@@ -51,11 +68,13 @@ Ui.BarWidget {
     }
     function pump() {
         if (inFlight || !queue.length) return
+        queue = queue.filter(item => (item.command !== "states" && item.command !== "control") || (canUseApi && item.generation === sessionGeneration))
+        if (!queue.length) return
         activeRequest = queue[0]; queue = queue.slice(1)
         inFlight = true
         worker.running = true
     }
-    function refresh() { if (connection.has_token) request("states") }
+    function refresh() { if (canUseApi && connection.has_token) request("states") }
     function filterDevices() {
         const needle = search.toLowerCase()
         const matches = allDevices.filter(d => {
@@ -83,6 +102,8 @@ Ui.BarWidget {
         if (interactions === 0 && deferredDevices) { const pending = deferredDevices; deferredDevices = null; applyDevices(pending) }
     }
     function receive(raw) {
+        // A completed request cannot reconnect a panel dismissed in the meantime.
+        if ((activeRequest.command === "states" || activeRequest.command === "control") && (!canUseApi || activeRequest.generation !== sessionGeneration)) return
         let result
         try { result = JSON.parse(raw) } catch (e) { errorText = "The Home Assistant helper did not return a valid response."; return }
         if (!result.ok) {
@@ -99,9 +120,14 @@ Ui.BarWidget {
             connection = data
             localUrl.text = data.local_url; remoteUrl.text = data.remote_url; mode.currentIndex = data.mode === "remote" ? 1 : 0
             token.text = ""
-            if (activeRequest.command === "save") { settingsOpen = false; connected = false; allDevices = []; devices.clear(); refresh() }
+            if (activeRequest.command === "save") {
+                settingsOpen = false; connected = false; allDevices = []; devices.clear()
+                // Save and connect is explicit authorization, only while visible.
+                sessionApproved = panel.open && activeRequest.generation === sessionGeneration
+                refresh()
+            }
             else if (!data.has_token) settingsOpen = true
-            else refresh()
+            else if (!sessionApproved) message = "Saved connection. Click Connect to load devices."
             break
         case "states":
             connected = true; applyDevices(data.devices)
@@ -130,7 +156,7 @@ Ui.BarWidget {
         }
     }
     Timer { id: refreshLater; interval: 900; onTriggered: root.refresh() }
-    Timer { interval: 10000; running: panel.open && !root.settingsOpen && root.connection.has_token && root.interactions === 0; repeat: true; onTriggered: root.refresh() }
+    Timer { interval: 10000; running: root.canUseApi && root.connected && root.connection.has_token && root.interactions === 0; repeat: true; onTriggered: root.refresh() }
     Ui.BarIconButton {
         id: button
         anchors.fill: parent
@@ -145,7 +171,7 @@ Ui.BarWidget {
         contentWidth: Commons.Style.space(480)
         contentHeight: Math.min(Commons.Style.space(710), screen ? screen.height - Commons.Style.space(110) : Commons.Style.space(710))
         open: false
-        onOpenChanged: if (!open) token.text = ""
+        onOpenChanged: if (!open) { token.text = ""; root.endSession() }
         Control {
             anchors.fill: parent
             palette.window: Commons.Color.background
@@ -206,7 +232,20 @@ Ui.BarWidget {
                 spacing: 8
                 HomeButton { text: "Dashboard"; iconName: "dashboard"; Layout.fillWidth: true; enabled: root.connection.has_token; onClicked: root.request("dashboard") }
                 HomeButton { text: "Remote"; iconName: "external"; Layout.fillWidth: true; enabled: !!root.connection.remote_url; onClicked: root.request("dashboard", {mode: "remote"}) }
-                HomeButton { iconName: "refresh"; Accessible.name: "Refresh devices"; enabled: !root.inFlight && root.connection.has_token; onClicked: root.refresh() }
+                HomeButton { iconName: "refresh"; Accessible.name: "Refresh devices"; enabled: !root.inFlight && root.canUseApi && root.connection.has_token; onClicked: root.refresh() }
+            }
+            HomeButton {
+                objectName: "connectSaved"
+                visible: !root.settingsOpen && !root.sessionApproved && root.connection.has_token
+                text: "Connect to Home Assistant"; iconName: "power"; primary: true
+                Layout.fillWidth: true; enabled: !root.inFlight
+                onClicked: root.connectSaved()
+            }
+            Label {
+                visible: !root.settingsOpen && !root.sessionApproved && root.usesLocalHttp && root.connection.has_token
+                text: "Local HTTP cannot verify the server’s identity. Connect only on your trusted home network, or use an HTTPS address."
+                textFormat: Text.PlainText; color: Commons.Color.foreground; opacity: 0.7
+                font.pixelSize: 11; wrapMode: Text.WordWrap; Layout.fillWidth: true
             }
             ScrollView {
                 visible: root.settingsOpen
@@ -232,6 +271,11 @@ Ui.BarWidget {
                     Label { textFormat: Text.PlainText;
                         text: "Create a long-lived access token in your Home Assistant profile → Security. It stays on this computer in a private file."
                         color: Commons.Color.foreground; opacity: 0.7; wrapMode: Text.WordWrap; Layout.fillWidth: true
+                    }
+                    Label {
+                        text: "Save and connect sends your token to the selected server. Local HTTP cannot verify its identity; use it only on a trusted network. HTTPS verifies the server certificate."
+                        textFormat: Text.PlainText; color: Commons.Color.foreground; opacity: 0.7
+                        wrapMode: Text.WordWrap; Layout.fillWidth: true
                     }
                     HomeButton {
                         text: "Save and connect"; iconName: "check"; primary: true; Layout.fillWidth: true; enabled: !root.inFlight

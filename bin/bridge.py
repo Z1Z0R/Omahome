@@ -19,6 +19,7 @@ class UserError(Exception):
 
 
 def url(value, remote=False):
+    """Validate transport/address policy; private HTTP does not prove server identity."""
     if not isinstance(value, str):
         raise UserError('Enter a Home Assistant URL.')
     value = value.strip().rstrip('/')

@@ -117,7 +117,7 @@ Once Home Assistant's built-in integration or your installed custom integration 
 
 Brightness, light color temperature, volume, speed, thermostat targets, and humidity targets are sent when you release a slider. Keyboard adjustments are combined after a short pause. RGB sliders prepare a color; **Apply RGB color** sends it. Home Assistant can convert RGB for HS/XY lights. Color temperature and RGB are separate light modes, so the most recently applied mode takes effect. Setting brightness to zero turns a light off; changing brightness or color can turn it on.
 
-The panel refreshes every 10 seconds while open and after commands. There is no polling while closed. It pauses updates during dragging and preserves expanded color editors across ordinary refreshes. A command failure never triggers an automatic retry. Click Refresh to recover after a connection failure.
+Startup and opening the panel only load saved settings. Click **Connect to Home Assistant** for each new panel session, or **Save and connect** after editing settings. After that explicit action, the panel refreshes every 10 seconds while open and after commands. Closing it ends approval, drops queued authenticated requests, and cancels delayed refreshes; an already-sent request cannot be recalled. Late replies cannot reconnect a closed panel. It pauses updates during dragging and preserves expanded color editors across ordinary refreshes. A command failure never triggers an automatic retry. Click Refresh to recover after a connection failure.
 
 ## Access from outside home
 
@@ -138,6 +138,8 @@ A Cloudflare Access login page will block API calls unless your proxy is configu
 **Open dashboard** follows the saved Local/Remote selection. **Open remotely** always uses the saved remote address. There is no automatic network switching or command replay between addresses.
 
 ## Credentials and connections
+
+A local HTTP address is not proof of server identity. The same private IP or `.local` name can point to a different device on another network. HTTP connections require the user to choose Connect on a trusted home network; HTTPS with a valid certificate authenticates the configured server. An approved HTTP session does not detect roaming to a different network while the panel remains open.
 
 - Settings live in `${XDG_CONFIG_HOME:-~/.config}/omahome/connection.json`, outside the plugin, with directory permissions 700 and file permissions 600. The access token is stored as plaintext inside that private file; this is not an encrypted keyring.
 - The token is passed to the Python helper through stdin, never command arguments or URLs. Public settings replies and error messages omit it; the password field clears after saving and when closing the panel.

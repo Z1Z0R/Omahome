@@ -503,6 +503,82 @@ class BridgeTests(unittest.TestCase):
             self.assertTrue(all(item['group_size'] == 3 for item in result[offset:offset + 3]))
             self.assertEqual(result[offset]['kind'], 'air_purifier')
 
+    def test_rooms_then_devices_replace_category_first_order(self):
+        states = [
+            {'entity_id': 'switch.bedroom_plug', 'state': 'on', 'attributes': {'friendly_name': 'Z plug', 'device_class': 'outlet'}},
+            {'entity_id': 'light.lounge_lamp', 'state': 'on', 'attributes': {'friendly_name': 'A lamp'}},
+            {'entity_id': 'media_player.bedroom_audio', 'state': 'on', 'attributes': {'friendly_name': 'A speaker'}},
+            {'entity_id': 'switch.unassigned', 'state': 'on', 'attributes': {'friendly_name': 'A unassigned'}},
+        ]
+        metadata = {
+            states[0]['entity_id']: {'device_id': 'plug', 'device_name': 'Z plug', 'area_id': 'bed', 'area_name': 'Bedroom'},
+            states[1]['entity_id']: {'device_id': 'lamp', 'device_name': 'A lamp', 'area_id': 'lounge', 'area_name': 'Living room'},
+            states[2]['entity_id']: {'device_id': 'audio', 'device_name': 'A speaker', 'area_id': 'bed', 'area_name': 'Bedroom'},
+        }
+        result = b.normalize_entities(states, {}, metadata)
+        self.assertEqual([item['id'] for item in result], [states[i]['entity_id'] for i in (2, 0, 1, 3)])
+        self.assertEqual([item['room_name'] for item in result], ['Bedroom', 'Bedroom', 'Living room', 'Unassigned'])
+        self.assertEqual(result[-1]['room_id'], '')
+
+    def test_device_area_keeps_overridden_entities_with_their_device(self):
+        states = [entity('fan', friendly_name='Purifier'), entity('switch', friendly_name='Purifier child lock')]
+        metadata = {
+            states[0]['entity_id']: {'device_id': 'purifier', 'device_name': 'Purifier', 'device_area_id': 'bed', 'device_area_name': 'Bedroom', 'area_id': 'bed', 'area_name': 'Bedroom'},
+            states[1]['entity_id']: {'device_id': 'purifier', 'device_name': 'Purifier', 'device_area_id': 'bed', 'device_area_name': 'Bedroom', 'area_id': 'office', 'area_name': 'Office'},
+        }
+        result = b.normalize_entities(list(reversed(states)), {}, metadata)
+        self.assertEqual([item['domain'] for item in result], ['fan', 'switch'])
+        self.assertTrue(all(item['room_id'] == 'bed' and item['room_name'] == 'Bedroom' for item in result))
+
+    def test_all_view_keeps_mixed_category_device_contiguous(self):
+        states = [entity('light', friendly_name='Combo lamp'), entity('media_player', friendly_name='Combo speaker'), entity('light', friendly_name='Separate lamp')]
+        states[2]['entity_id'] = 'light.other'
+        metadata = {state['entity_id']: {'device_id': 'combo' if index < 2 else 'other', 'device_name': 'A combo' if index < 2 else 'B lamp', 'area_id': 'office', 'area_name': 'Office'} for index, state in enumerate(states)}
+        result = b.normalize_entities(list(reversed(states)), {}, metadata)
+        self.assertEqual([item['group_id'] for item in result], ['device:combo', 'device:combo', 'device:other'])
+        self.assertEqual({item['category'] for item in result[:2]}, {'Lights', 'Audio'})
+
+    def test_area_only_entities_without_registry_devices_remain_separate(self):
+        states = [entity('sensor', device_class='temperature'), entity('sensor', device_class='humidity')]
+        states[0]['entity_id'] = 'sensor.desk_temperature'
+        states[1]['entity_id'] = 'sensor.desk_humidity'
+        metadata = {
+            states[0]['entity_id']: {'area_id': 'office', 'area_name': 'Office'},
+            states[1]['entity_id']: {'area_id': 'bed', 'area_name': 'Bedroom'},
+        }
+        result = b.normalize_entities(states, {}, metadata)
+        self.assertNotEqual(result[0]['group_id'], result[1]['group_id'])
+        self.assertEqual([item['room_id'] for item in result], ['bed', 'office'])
+
+    def test_room_selection_and_order_do_not_depend_on_response_order(self):
+        states = [entity('switch', friendly_name='Display'), entity('fan', friendly_name='Fan')]
+        metadata = {
+            states[0]['entity_id']: {'device_id': 'fan', 'device_name': 'Desk fan', 'area_id': 'other', 'area_name': 'Other room'},
+            states[1]['entity_id']: {'device_id': 'fan', 'device_name': 'Desk fan', 'area_id': 'office', 'area_name': 'Office'},
+        }
+        result = b.normalize_entities(states, {}, metadata)
+        self.assertEqual(result, b.normalize_entities(list(reversed(states)), {}, metadata))
+        self.assertTrue(all(item['room_id'] == 'office' for item in result))
+
+    def test_device_room_inheritance_rejects_conflicting_prefix_inference(self):
+        states = [entity('fan', friendly_name='Desk fan'), entity('sensor', device_class='temperature')]
+        states[1]['entity_id'] = 'sensor.desk_temperature'
+        for room in ({'device_area_id': 'office', 'device_area_name': 'Office'}, {'area_id': 'office', 'area_name': 'Office'}):
+            metadata = {
+                states[0]['entity_id']: {'device_id': 'fan', **room},
+                states[1]['entity_id']: {'area_id': 'bed', 'area_name': 'Bedroom'},
+            }
+            result = b.normalize_entities(states, {}, metadata)
+            self.assertNotEqual(result[0]['group_id'], result[1]['group_id'])
+            self.assertEqual({item['room_id'] for item in result}, {'bed', 'office'})
+
+    def test_same_names_in_different_rooms_have_stable_ties(self):
+        states = [{'entity_id': 'light.lamp_' + suffix, 'state': 'on', 'attributes': {'friendly_name': 'Lamp'}} for suffix in ('a', 'b')]
+        metadata = {state['entity_id']: {'device_id': str(index), 'device_name': 'Lamp', 'area_id': str(index), 'area_name': 'Room'} for index, state in enumerate(states)}
+        result = b.normalize_entities(states, {}, metadata)
+        self.assertEqual(result, b.normalize_entities(list(reversed(states)), {}, metadata))
+        self.assertNotEqual(result[0]['group_id'], result[1]['group_id'])
+
     def test_same_name_different_registry_devices_never_merge(self):
         states = [{'entity_id': 'fan.purifier_' + str(i), 'state': 'on', 'attributes': {'friendly_name': 'Core 300S'}} for i in [1, 2]]
         metadata = {s['entity_id']: {'device_id': str(i), 'device_name': 'Core 300S', 'model': 'Core300S'} for i, s in enumerate(states)}
@@ -551,6 +627,20 @@ class BridgeTests(unittest.TestCase):
         self.assertNotIn('services/', client.calls[0][1]['template'])
         with patch.object(client, 'request', side_effect=b.UserError('denied')):
             self.assertEqual(b.device_metadata(client, [entity('fan')]), {})
+
+    def test_metadata_keeps_area_only_rows_and_sanitizes_optional_fields(self):
+        class TemplateClient:
+            def request(self, path, data):
+                self.template = data['template']
+                return [{'entity_id': 'sensor.desk', 'area_id': 'office', 'area_name': 'Office', 'device_id': None, 'device_name': []}, {'entity_id': [], 'area_id': 'bad'}, None]
+        client = TemplateClient()
+        metadata = b.device_metadata(client, [entity('sensor', device_class='temperature')])
+        self.assertEqual(list(metadata), ['sensor.desk'])
+        self.assertEqual(metadata['sensor.desk']['area_name'], 'Office')
+        self.assertEqual(metadata['sensor.desk']['device_id'], '')
+        self.assertEqual(metadata['sensor.desk']['device_name'], '')
+        self.assertIn('area_id(e)', client.template)
+        self.assertIn('area_id(d) if d else none', client.template)
 
 
 if __name__ == '__main__':

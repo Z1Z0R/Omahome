@@ -84,13 +84,15 @@ Automation entities appear under **Automations**, separate from physical device 
 
 See Home Assistant's [trigger automation](https://www.home-assistant.io/actions/automation.trigger/) and [disable automation](https://www.home-assistant.io/actions/automation.turn_off/) documentation for these options.
 
-### Device-first ordering
+### Device and room ordering
 
-Within each category, entities are grouped by physical device rather than by control type. A Core 300S group contains its power/speed/mode controls, then its display/child-lock settings and filter/air-quality readings, before another purifier’s group begins. Devices with multiple displayed entities have a group heading. Temperature and humidity entities belonging to the same Govee device are kept together too.
+Each physical device keeps its main controls, settings, and readings together. Device groups are organized into alphabetically sorted room sections, then sorted by device name within each room. The All view uses this order across device types; categories remain filters rather than the primary sort order. Devices without a known room appear under **Unassigned** at the end.
 
-A read-only Home Assistant template lookup obtains device IDs, names, and model information. Device IDs keep two identically named devices separate. If template access is unavailable or restricted, the panel still works and falls back to entity-ID prefixes after stripping known control/measurement suffixes. Room and numeric identifiers are retained; the fallback does not merge everything by model number.
+Rooms come from Home Assistant areas. A physical device's assigned area takes precedence so its entities remain together even if an auxiliary entity has an area override. If the device has no area, its primary entity's area is used, followed by another member's known area. Entities without a registry device can still use their own area. Set or change these assignments in Home Assistant; Omahome does not guess rooms from names.
 
-Related controls and readings inherit their primary device’s category: a tower fan’s display switch stays in Fans, while a purifier’s settings stay in Air care. Search recalculates group headings so a matching setting or reading still has context even when its main card is filtered out.
+A read-only Home Assistant template lookup obtains device IDs, names, model information, and areas. Stable IDs keep identically named devices and rooms separate. If template access is unavailable or restricted, the panel falls back to entity-ID prefixes after stripping known control/measurement suffixes, and displays **Unassigned**. Room and numeric identifiers in those prefixes are retained; devices are not merged just by model number. Area-only entities with matching prefixes in different rooms stay separate.
+
+Related controls and readings retain their primary device's category: a tower fan's display switch stays in Fans, while a purifier's settings stay in Air care. Search matches room and device names as well as entity names and IDs. Room/device headings are recalculated after filtering so a matching auxiliary control retains context. If a category loses its last entity during a refresh, the view returns to All instead of leaving an invisible category selected.
 
 ### Levoit and other air purifiers
 

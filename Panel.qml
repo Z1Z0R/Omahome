@@ -76,17 +76,21 @@ Ui.BarWidget {
     }
     function refresh() { if (canUseApi && connection.has_token) request("states") }
     function filterDevices() {
+        if (category !== "All" && !allDevices.some(d => d.category === category)) category = "All"
         const needle = search.toLowerCase()
         const matches = allDevices.filter(d => {
             const group = category === "All" || d.category === category
-            return group && (!needle || (d.name + " " + d.id).toLowerCase().indexOf(needle) >= 0)
+            return group && (!needle || (d.name + " " + d.id + " " + (d.group_name || "") + " " + (d.room_name || "")).toLowerCase().indexOf(needle) >= 0)
         })
         // Keep delegates stable so open color editors and keyboard focus survive polling.
         let index = 0
         let previousGroup = ""
+        let previousRoom = null
         for (let original of matches) {
-            const d = Object.assign({}, original, {group_start: original.group_id !== previousGroup})
+            const roomId = original.room_id || ""
+            const d = Object.assign({}, original, {group_start: original.group_id !== previousGroup, room_start: roomId !== previousRoom})
             previousGroup = original.group_id
+            previousRoom = roomId
             if (index < devices.count && devices.get(index).payload.id === d.id) devices.setProperty(index, "payload", d)
             else { while (index < devices.count) devices.remove(index); devices.append({payload: d}) }
             index++
@@ -340,6 +344,15 @@ Ui.BarWidget {
                             required property var payload
                             width: parent.width
                             spacing: 8
+                            Label {
+                                objectName: "roomHeading"
+                                visible: !!groupRow.payload.room_start
+                                text: groupRow.payload.room_name || "Unassigned"
+                                textFormat: Text.PlainText; color: Commons.Color.accent
+                                font.pixelSize: 14; font.weight: Font.DemiBold
+                                width: parent.width; elide: Text.ElideRight
+                                topPadding: 10; leftPadding: 3
+                            }
                             Label {
                                 visible: !!groupRow.payload.group_start && groupRow.payload.group_size > 1
                                 text: groupRow.payload.group_name || ""

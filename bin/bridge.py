@@ -405,7 +405,7 @@ def include_entity(state):
 
 
 def device_metadata(client, states):
-    """Read physical device associations; gracefully fall back for limited tokens."""
+    """Read device/area associations; gracefully fall back for limited tokens."""
     ids = [state['entity_id'] for state in states
            if state.get('entity_id', '').split('.')[0] in DOMAINS
            and re.fullmatch(r'[a-z_]+\.[a-z0-9_]+', state.get('entity_id', ''))]
@@ -413,20 +413,26 @@ def device_metadata(client, states):
         return {}
     # Entity IDs are validated above and serialized; names never enter the template.
     template = ("{% set ns = namespace(rows=[]) %}{% for e in " + json.dumps(ids) + " %}"
-                "{% set d = device_id(e) %}{% if d %}"
-                "{% set ns.rows = ns.rows + [{'entity_id': e, 'device_id': d, "
-                "'device_name': device_attr(d, 'name_by_user') or device_attr(d, 'name') or e, "
-                "'model': device_attr(d, 'model') or '', 'manufacturer': device_attr(d, 'manufacturer') or ''}] %}"
-                "{% endif %}{% endfor %}{{ ns.rows | to_json }}")
+                "{% set d = device_id(e) %}{% set a = area_id(e) %}"
+                "{% set da = area_id(d) if d else none %}"
+                "{% set ns.rows = ns.rows + [{'entity_id': e, 'device_id': d or '', "
+                "'device_name': (device_attr(d, 'name_by_user') or device_attr(d, 'name') or '') if d else '', "
+                "'model': (device_attr(d, 'model') or '') if d else '', "
+                "'manufacturer': (device_attr(d, 'manufacturer') or '') if d else '', "
+                "'area_id': a or '', 'area_name': (area_name(a) or '') if a else '', "
+                "'device_area_id': da or '', 'device_area_name': (area_name(da) or '') if da else ''}] %}"
+                "{% endfor %}{{ ns.rows | to_json }}")
     try:
         rows = client.request('template', {'template': template})
     except UserError:
         return {}
     if not isinstance(rows, list):
         return {}
-    return {row['entity_id']: row for row in rows
-            if isinstance(row, dict) and row.get('entity_id') in ids
-            and isinstance(row.get('device_id'), str) and row['device_id']}
+    fields = ('device_id', 'device_name', 'model', 'manufacturer', 'area_id', 'area_name', 'device_area_id', 'device_area_name')
+    requested = set(ids)
+    return {row['entity_id']: {key: row.get(key) if isinstance(row.get(key), str) else '' for key in fields}
+            for row in rows if isinstance(row, dict) and isinstance(row.get('entity_id'), str)
+            and row['entity_id'] in requested}
 
 
 ENTITY_SUFFIX = re.compile(r'(?:[ _-]+(?:child[ _-]*lock|display(?:[ _-]*status)?|filter[ _-]*(?:life|remaining)|air[ _-]*quality|night[ _-]*light(?:[ _-]*level)?|mist[ _-]*level|pm2[_. -]?5|pm1|pm10|temperature|humidity|preset(?:[ _-]*mode)?|mode|speed|power|fan|switch|sensor))$', re.I)
@@ -456,15 +462,21 @@ def member_rank(item):
 
 def group_devices(items, metadata):
     known = {}
+    device_rooms = {}
     for item in items:
         info = metadata.get(item['id']) or {}
         if info.get('device_id'):
             known.setdefault(fallback_device_key(item), set()).add(info['device_id'])
+            known_room = info.get('device_area_id') or info.get('area_id')
+            if known_room:
+                device_rooms.setdefault(info['device_id'], set()).add(known_room)
     groups = {}
     for item in items:
         info = metadata.get(item['id']) or {}
         actual = info.get('device_id')
-        inferred = known.get(fallback_device_key(item), set())
+        area = info.get('area_id') or ''
+        inferred = {device for device in known.get(fallback_device_key(item), set())
+                    if not area or not device_rooms.get(device) or area in device_rooms[device]}
         if item['domain'] == 'automation':
             group_id = 'entity:' + item['id']
         elif actual:
@@ -472,23 +484,35 @@ def group_devices(items, metadata):
         elif len(inferred) == 1:
             group_id = 'device:' + next(iter(inferred))
         else:
-            group_id = 'name:' + fallback_device_key(item)
+            group_id = 'name:' + fallback_device_key(item) + (':area:' + area if area else '')
         item['group_id'] = group_id
         groups.setdefault(group_id, []).append(item)
     for group_id, members in groups.items():
-        primary = min(members, key=lambda item: (member_rank(item), item['kind'] == 'control', item['name'].casefold(), item['id']))
-        info = next((metadata[m['id']] for m in members if (metadata.get(m['id']) or {}).get('device_name')), {})
+        ordered = sorted(members, key=lambda item: (member_rank(item), item['kind'] == 'control', item['name'].casefold(), item['id']))
+        primary = ordered[0]
+        info = next((metadata[m['id']] for m in ordered if (metadata.get(m['id']) or {}).get('device_name')), {})
         name = str(info.get('device_name') or (primary['name'] if member_rank(primary) == 0 else base_label(primary['name'])))
+        # A physical device is one group even when an auxiliary entity overrides
+        # its area. Prefer the device's area, then its main entity's area.
+        room = next((metadata[m['id']] for m in ordered if (metadata.get(m['id']) or {}).get('device_area_id')), None)
+        if room:
+            room_id, room_name = room['device_area_id'], room.get('device_area_name') or room['device_area_id']
+        else:
+            room = next((metadata[m['id']] for m in ordered if (metadata.get(m['id']) or {}).get('area_id')), {})
+            room_id = room.get('area_id') or ''
+            room_name = room.get('area_name') or room_id or 'Unassigned'
         for item in members:
             item['group_name'] = name
             item['group_size'] = len(members)
+            item['room_id'] = room_id
+            item['room_name'] = room_name
             # A purifier's display/night light/readings belong with that purifier;
             # an ordinary fan's related settings belong under Fans.
             if primary['domain'] in ('fan', 'humidifier', 'climate', 'light', 'switch', 'media_player', 'cover') and (item['domain'] in ('sensor', 'binary_sensor', 'switch', 'light', 'number', 'select') or item['kind'] == 'child_lock'):
                 item['category'] = primary['category']
                 if item['kind'] == 'control':
                     item['type_label'] = 'Fan setting' if primary['category'] == 'Fans' else item['type_label']
-    return sorted(items, key=lambda item: (CATEGORY_ORDER.index(item['category']), item['group_name'].casefold(), item['group_id'], member_rank(item), item['name'].casefold(), item['id']))
+    return sorted(items, key=lambda item: (not bool(item['room_id']), item['room_name'].casefold(), item['room_id'], item['group_name'].casefold(), item['group_id'], member_rank(item), item['name'].casefold(), item['id']))
 
 
 def normalize_entities(states, config, metadata=None):

@@ -21,7 +21,7 @@ A native **Home Assistant** panel for the Omarchy desktop, by **Zizor**. Control
 | Covers and scenes | Open/stop/close and scene activation, including scenes without known activation history |
 | Automations | Dedicated category, enable/disable, and run with conditions checked |
 
-Entities are grouped by physical device, with search and category filters. Generic telemetry such as RSSI, uptime, and sun positions is hidden. Govee and other Bluetooth readings work through the entities already exposed by Home Assistant; Omahome does not scan Bluetooth itself.
+Controls and readings stay together per physical device. Device groups are organized under Home Assistant room headings and sorted alphabetically within each room, with **Unassigned** last. Search matches room names, device names, entity names, and IDs; category tabs remain available as filters. Set device areas in Home Assistant to organize your rooms. Generic telemetry such as RSSI, uptime, and sun positions is hidden. Govee and other Bluetooth readings work through the entities already exposed by Home Assistant; Omahome does not scan Bluetooth itself.
 
 ## Requirements
 

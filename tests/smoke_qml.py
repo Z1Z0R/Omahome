@@ -46,6 +46,18 @@ sample('switch', device_class='outlet')
 sample('switch', friendly_name='Desk plug child lock', entity_category='config')
 sample('automation', friendly_name='Evening lights')
 
+room_states = [
+    {'entity_id': 'fan.office_purifier', 'state': 'on', 'attributes': {'friendly_name': 'Purifier'}},
+    {'entity_id': 'switch.office_purifier_child_lock', 'state': 'on', 'attributes': {'friendly_name': 'Child lock'}},
+    {'entity_id': 'light.bedroom_lamp', 'state': 'on', 'attributes': {'friendly_name': 'Lamp'}},
+]
+room_metadata = {
+    room_states[0]['entity_id']: {'device_id': 'purifier', 'device_name': 'Desk air care', 'area_id': 'office', 'area_name': 'Office'},
+    room_states[1]['entity_id']: {'device_id': 'purifier', 'device_name': 'Desk air care', 'area_id': 'office', 'area_name': 'Office'},
+    room_states[2]['entity_id']: {'device_id': 'lamp', 'device_name': 'Bedside lamp', 'area_id': 'bedroom', 'area_name': 'Bedroom'},
+}
+room_samples = bridge.normalize_entities(room_states, {}, room_metadata)
+
 with tempfile.TemporaryDirectory(prefix='omahome-qml-') as temporary:
     directory = Path(temporary)
     (directory / 'Commons').symlink_to(omarchy / 'shell/Commons', target_is_directory=True)
@@ -78,6 +90,13 @@ ShellRoot {
     property var lastRgb: []
     property bool automationPassed: false
     property bool scenePassed: false
+    function rows(item) {
+        const model = Array.from(item.data).find(child => "count" in child && "get" in child && "append" in child)
+        if (!model) { console.error("SMOKE ASSERTION FAILED: device model missing"); return [] }
+        const found = []
+        for (let index = 0; index < model.count; index++) found.push(model.get(index).payload)
+        return found
+    }
     function findItem(item, name) {
         if (item.objectName === name) return item
         for (const child of item.children || []) {
@@ -88,6 +107,7 @@ ShellRoot {
     }
     property bool dragPassed: false
     property bool keyboardPassed: false
+    property bool roomsPassed: false
     // Match the bar host: derive the slot from the widget's preferred size.
     Panel { id: widget; width: implicitWidth; height: implicitHeight }
     DeviceCard { id: colorCard; width: 420; expanded: false; onControl: (action, value) => { suite.rgbPassed = action === "rgb" && JSON.stringify(value) === "[12,34,56]"; if (action === "rgb") { suite.rgbCommandCount++; suite.lastRgb = value } }; device: ''' + json.dumps(samples[0]) + ''' }
@@ -130,9 +150,6 @@ ShellRoot {
         slider.increase()
         slider.moved()
         keyboard.modelValue = 21
-    } }
-    Timer { interval: 1000; running: true; onTriggered: {
-        if (!suite.dragPassed || !suite.keyboardPassed) console.error("SMOKE ASSERTION FAILED: slider regression checks did not pass")
     } }
     Timer { interval: 200; running: true; onTriggered: {
         if (widget.implicitWidth <= 0 || widget.implicitHeight <= 0 || widget.width <= 0 || widget.height <= 0) {
@@ -213,7 +230,35 @@ ShellRoot {
         widget.category = "All"; widget.filterDevices()
         if (widget.allDevices.length !== 18) console.error("SMOKE ASSERTION FAILED")
     } }
-    Timer { interval: 1400; running: true; onTriggered: Qt.quit() }
+    Timer { interval: 950; running: true; onTriggered: {
+        widget.applyDevices(''' + json.dumps(room_samples) + ''')
+        const rows = suite.rows(widget)
+        if (rows.length !== 3 || rows.filter(row => row.room_start).length !== 2 || rows.filter(row => row.group_start).length !== 2) console.error("SMOKE ASSERTION FAILED: room/device heading counts")
+        widget.search = "office"; widget.filterDevices()
+        const office = suite.rows(widget)
+        if (office.length !== 2 || office.filter(row => row.room_start).length !== 1 || office.some(row => row.room_id !== "office")) console.error("SMOKE ASSERTION FAILED: room search")
+        widget.search = "child lock"; widget.filterDevices()
+        const child = suite.rows(widget)
+        if (child.length !== 1 || !child[0].room_start || !child[0].group_start || child[0].group_name !== "Desk air care") console.error("SMOKE ASSERTION FAILED: filtered auxiliary lost room/device context")
+        widget.search = "desk air care"; widget.filterDevices()
+        if (suite.rows(widget).length !== 2) console.error("SMOKE ASSERTION FAILED: physical device search")
+        widget.search = ""; widget.category = "Lights"; widget.filterDevices()
+        const lights = suite.rows(widget)
+        if (lights.length !== 1 || !lights[0].room_start || lights[0].room_name !== "Bedroom") console.error("SMOKE ASSERTION FAILED: category room header")
+        widget.category = "All"; widget.applyDevices(''' + json.dumps(room_samples) + ''')
+        if (suite.rows(widget).length !== 3) console.error("SMOKE ASSERTION FAILED: room refresh duplicates")
+        widget.category = "Lights"
+        widget.applyDevices(''' + json.dumps([item for item in room_samples if item['domain'] != 'light']) + ''')
+        if (widget.category !== "All" || suite.rows(widget).length !== 2) console.error("SMOKE ASSERTION FAILED: removed category left hidden empty filter")
+        suite.roomsPassed = true
+    } }
+    Timer { interval: 200; repeat: true; running: true; onTriggered: {
+        if (suite.roomsPassed && suite.dragPassed && suite.keyboardPassed) Qt.quit()
+    } }
+    Timer { interval: 5000; running: true; onTriggered: {
+        console.error("SMOKE ASSERTION FAILED: regression checks timed out", suite.roomsPassed, suite.dragPassed, suite.keyboardPassed)
+        Qt.quit()
+    } }
 }
 ''')
     for name in ('runtime', 'config', 'cache'):
@@ -225,5 +270,5 @@ ShellRoot {
     if result.returncode or 'Configuration Loaded' not in output or any(marker in output for marker in ('WARN scene:', 'ERROR scene:', 'Failed to load configuration', 'SMOKE ASSERTION FAILED', 'ReferenceError', 'TypeError')):
         print(output)
         raise SystemExit('QML smoke test failed.')
-    print('QML smoke test passed: setup form, purifier presets, fan controls, air-care settings, climate and humidity controls, readings, device group headings, polling updates, category filters, child-lock icons/status, RGB presets/draft preservation/refresh synchronization, unknown-scene activation, automation controls/category, and drag/keyboard slider regression checks.')
+    print('QML smoke test passed: setup form, purifier presets, fan controls, air-care settings, climate and humidity controls, readings, room/device headings, room/device search, polling updates, category filters, child-lock icons/status, RGB presets/draft preservation/refresh synchronization, unknown-scene activation, automation controls/category, and drag/keyboard slider regression checks.')
     print('Popup compositor wrapper was stubbed; live Wayland placement and hardware were not tested.')
